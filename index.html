@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Page Replacement Simulator</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<aside class="sidebar">
+  <div class="brand"><span class="logo">&#10227;</span><span>Page Replacement Simulator</span></div>
+  <nav>
+    <a class="active" href="#home">Home</a>
+    <a href="#run">Run Simulation</a>
+    <a href="#results">Results</a>
+    <a href="#about">About</a>
+  </nav>
+</aside>
+
+<main>
+  <header id="home">
+    <h1>Workload-Aware Adaptive Page Replacement</h1>
+    <p>Compare FIFO, LRU, Optimal and Adaptive on the same page-reference string. Every number below is calculated from the simulation you run.</p>
+  </header>
+
+  <section id="run" class="grid two">
+    <div class="card">
+      <h2>Input Parameters</h2>
+      <label for="refs">Page reference sequence (space separated)</label>
+      <input id="refs" type="text" value="7 0 1 2 0 3 0 4 2 3 0 3 2 1 2 0 1 7 0 1" autocomplete="off">
+
+      <label for="frames">Number of frames (1&ndash;20)</label>
+      <input id="frames" type="number" min="1" max="20" value="3">
+
+      <label for="preset">Workload example</label>
+      <select id="preset">
+        <option value="">Custom (type your own above)</option>
+        <option value="7 0 1 2 0 3 0 4 2 3 0 3 2 1 2 0 1 7 0 1">Textbook example</option>
+        <option value="1 2 3 4 5 6 7 8 9 10 11 12">Sequential (pure scan)</option>
+        <option value="1 2 1 3 1 2 1 4 1 2 1 3 2 1 2 5 1 2 1 3">Repeated (pages reused)</option>
+        <option value="1 2 3 4 5 6 1 2 1 2 1 3 1 2 7 8 9 10 1 2 1 3 1 2">Mixed (scan + reuse)</option>
+      </select>
+
+      <button id="run-btn" class="primary">&#9654; Run Simulation</button>
+      <p id="error" class="error" role="alert"></p>
+    </div>
+
+    <div class="card">
+      <h2>Simulation Output</h2>
+      <dl id="summary" class="summary"></dl>
+    </div>
+  </section>
+
+  <section id="results">
+    <div class="card">
+      <h2>Simulation Results</h2>
+      <div class="table-wrap">
+        <table id="results-table">
+          <thead><tr><th>Algorithm</th><th>Page Faults</th><th>Page Hits</th><th>Hit Ratio</th><th>Fault Ratio</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Page Faults Comparison</h2>
+      <p class="muted">Lower is better for this reference string and frame count. Optimal is only a benchmark.</p>
+      <div id="chart"></div>
+    </div>
+
+    <div class="card">
+      <h2>Step-by-Step Simulation</h2>
+      <div class="tabs" id="step-tabs"></div>
+      <div class="table-wrap"><table id="steps-table"></table></div>
+    </div>
+
+    <div class="card">
+      <h2>Adaptive Eviction Decisions</h2>
+      <p class="muted" id="adaptive-summary"></p>
+      <div class="table-wrap"><table id="adaptive-table"></table></div>
+    </div>
+  </section>
+
+  <section id="about" class="card">
+    <h2>About the Algorithms</h2>
+    <ul>
+      <li><b>FIFO</b> replaces the page that has been in memory the longest.</li>
+      <li><b>LRU</b> replaces the page that was used least recently.</li>
+      <li><b>Optimal</b> replaces the page whose next use is farthest in the future. It needs the future, so it is only a theoretical benchmark.</li>
+      <li><b>Adaptive</b> runs two hidden "shadow" memories, one FIFO and one LRU, fed with the same references seen so far. When a real replacement is needed, it counts the faults each shadow had in the last 8 references (including the current one) and evicts using the strategy with fewer faults. Ties go to FIFO. It never looks at future references.</li>
+    </ul>
+    <p class="muted">Adaptive is a simple heuristic. It is not guaranteed to beat FIFO or LRU, and on some inputs it does worse than one of them.</p>
+  </section>
+</main>
+
+<script src="script.js"></script>
+</body>
+</html>

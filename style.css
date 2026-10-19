@@ -1,0 +1,139 @@
+:root {
+  --bg: #0a1020;
+  --panel: #101a30;
+  --panel-2: #0d1528;
+  --border: #1f2d4d;
+  --text: #e6ecf8;
+  --muted: #8d9bb8;
+  --accent: #2f7bff;
+  --fifo: #3b82f6;
+  --lru: #4ade80;
+  --optimal: #a855f7;
+  --adaptive: #fbbf24;
+  --hit: #34d399;
+  --miss: #f87171;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+
+body {
+  margin: 0;
+  display: flex;
+  min-height: 100vh;
+  background: radial-gradient(circle at 20% 0%, #14213f 0%, var(--bg) 55%);
+  color: var(--text);
+  font-family: "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
+  line-height: 1.5;
+}
+
+/* ---------- Sidebar ---------- */
+.sidebar {
+  position: sticky; top: 0;
+  width: 220px; height: 100vh; flex-shrink: 0;
+  padding: 20px 14px;
+  background: var(--panel-2);
+  border-right: 1px solid var(--border);
+}
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 14px; margin-bottom: 26px; }
+.logo { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 8px; background: var(--accent); font-size: 18px; }
+nav a {
+  display: block; padding: 10px 12px; margin-bottom: 4px;
+  border-radius: 8px; color: var(--muted); text-decoration: none; font-size: 14px;
+}
+nav a:hover { background: #16233f; color: var(--text); }
+nav a.active { background: var(--accent); color: #fff; }
+
+/* ---------- Layout ---------- */
+main { flex: 1; min-width: 0; padding: 28px 32px 48px; max-width: 1100px; }
+header h1 { margin: 0 0 6px; font-size: 26px; }
+header p { margin: 0 0 22px; color: var(--muted); }
+section { margin-bottom: 20px; }
+.grid.two { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 20px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
+}
+.grid .card { margin-bottom: 0; }
+.card h2 { margin: 0 0 14px; font-size: 17px; }
+.muted { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
+
+/* ---------- Form ---------- */
+label { display: block; margin: 12px 0 6px; font-size: 13px; color: var(--muted); }
+input, select {
+  width: 100%; padding: 10px 12px;
+  background: var(--panel-2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 8px; font-size: 15px;
+}
+input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+button.primary {
+  width: 100%; margin-top: 18px; padding: 12px;
+  background: var(--accent); color: #fff; border: 0; border-radius: 8px;
+  font-size: 15px; font-weight: 600; cursor: pointer;
+}
+button.primary:hover { background: #4a8bff; }
+.error { min-height: 20px; margin: 10px 0 0; color: var(--miss); font-size: 14px; }
+
+/* ---------- Summary ---------- */
+.summary { margin: 0; }
+.summary div { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 14px; }
+.summary div:last-child { border-bottom: 0; }
+.summary dt { color: var(--muted); }
+.summary dd { margin: 0; font-weight: 600; text-align: right; }
+
+/* ---------- Tables ---------- */
+.table-wrap { overflow-x: auto; max-height: 460px; overflow-y: auto; border-radius: 8px; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { padding: 10px 12px; text-align: center; border-bottom: 1px solid var(--border); white-space: nowrap; }
+th { position: sticky; top: 0; background: #16233f; color: var(--muted); font-weight: 600; z-index: 1; }
+td:first-child, th:first-child { text-align: left; }
+tbody tr:hover { background: #14213a; }
+.tag { margin-left: 6px; padding: 2px 6px; font-size: 11px; border-radius: 6px; background: #2a1d4d; color: #d8b4fe; }
+.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 8px; }
+
+.cell { display: inline-block; min-width: 30px; margin: 0 2px; padding: 3px 6px; border-radius: 6px; background: var(--panel-2); border: 1px solid var(--border); }
+.cell.cur { border-color: var(--accent); color: #fff; background: #1b3566; }
+.badge { padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+.badge.hit { background: rgba(52, 211, 153, 0.15); color: var(--hit); }
+.badge.miss { background: rgba(248, 113, 113, 0.15); color: var(--miss); }
+.rule-FIFO { color: var(--fifo); font-weight: 600; }
+.rule-LRU { color: var(--lru); font-weight: 600; }
+
+/* ---------- Tabs ---------- */
+.tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.tabs button {
+  padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 14px;
+  background: var(--panel-2); color: var(--muted); border: 1px solid var(--border);
+}
+.tabs button.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+/* ---------- Bar chart ---------- */
+.plot { position: relative; height: 240px; margin: 20px 0 0 34px; border-left: 1px solid var(--border); }
+.gl { position: absolute; left: 0; right: 0; border-top: 1px solid var(--border); }
+.gl span { position: absolute; left: -30px; top: -9px; width: 24px; text-align: right; font-size: 12px; color: var(--muted); }
+.bars { position: absolute; inset: 0; display: flex; justify-content: space-around; padding: 0 4%; }
+.col { width: 20%; height: 100%; display: flex; align-items: flex-end; justify-content: center; }
+.bar { position: relative; width: 70%; max-width: 90px; border-radius: 6px 6px 0 0; min-height: 2px; transition: height 0.4s; }
+.bar b { position: absolute; top: -22px; left: 0; right: 0; text-align: center; font-size: 13px; }
+.labels { display: flex; justify-content: space-around; padding: 0 4%; margin: 10px 0 0 34px; font-size: 13px; color: var(--muted); }
+.labels span { width: 20%; text-align: center; }
+
+/* ---------- About ---------- */
+#about ul { margin: 0 0 12px; padding-left: 20px; font-size: 14px; }
+#about li { margin-bottom: 8px; }
+
+/* ---------- Small screens ---------- */
+@media (max-width: 820px) {
+  body { flex-direction: column; }
+  .sidebar { position: static; width: 100%; height: auto; padding: 12px; }
+  .brand { margin-bottom: 10px; }
+  nav { display: flex; flex-wrap: wrap; gap: 4px; }
+  nav a { margin: 0; }
+  main { padding: 20px 14px 40px; }
+  .grid.two { grid-template-columns: 1fr; }
+}
