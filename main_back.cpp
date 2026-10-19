@@ -6,6 +6,8 @@
 //  Run        : ./pagesim            (Windows: .\pagesim.exe)
 //  Self-test  : ./pagesim --test
 //
+//  Adaptive uses the same rule as the website (shadow FIFO vs shadow LRU).
+//
 //  File layout (read top to bottom):
 //    1. Constants and data structures
 //    2. Small helper functions
@@ -35,9 +37,8 @@ const int MAX_REFS   = 200;  // longest reference string accepted
 const int MAX_PAGE   = 999;  // largest page number accepted
 const int EMPTY      = -1;   // marks an empty frame slot
 
-// Adaptive rule settings (explained in the project notes):
-const int    ADAPT_WINDOW    = 8;     // look at the last 8 references
-const double ADAPT_THRESHOLD = 0.30;  // >= 30% repeats in window -> use LRU
+// Adaptive rule setting: how many recent references are compared.
+const int ADAPT_WINDOW = 8;           // last 8 references (incl. current one)
 
 // What happened on ONE page reference (used to print frame contents).
 struct Step {
@@ -45,7 +46,8 @@ struct Step {
     bool        hit;      // true = hit, false = fault
     vector<int> frames;   // frame contents AFTER this reference
     int         evicted;  // page removed (EMPTY if nothing was removed)
-    string      note;     // for Adaptive: which rule picked the victim
+    string      rule;     // Adaptive only: "FIFO" or "LRU" (empty otherwise)
+    string      note;     // Adaptive only: the evidence behind that choice
 };
 
 // The outcome of running one algorithm over the whole reference string.
@@ -83,12 +85,13 @@ double percent(int part, int total) {
 
 // Saves one step into the result.
 void recordStep(Result& r, int page, bool hit, const vector<int>& frames,
-                int evicted, const string& note) {
+                int evicted, const string& rule, const string& note) {
     Step s;
     s.page = page;
     s.hit = hit;
     s.frames = frames;
     s.evicted = evicted;
+    s.rule = rule;
     s.note = note;
     r.steps.push_back(s);
 }
@@ -124,7 +127,7 @@ Result runFIFO(const vector<int>& refs, int numFrames) {
             }
             frames[slot] = page;
         }
-        recordStep(r, page, hit, frames, evicted, "");
+        recordStep(r, page, hit, frames, evicted, "", "");
     }
     return r;
 }
@@ -157,7 +160,7 @@ Result runLRU(const vector<int>& refs, int numFrames) {
             frames[slot] = page;
         }
         lastUsed[slot] = (int)i;             // hit OR load counts as a "use"
-        recordStep(r, page, hit, frames, evicted, "");
+        recordStep(r, page, hit, frames, evicted, "", "");
     }
     return r;
 }
@@ -197,37 +200,54 @@ Result runOptimal(const vector<int>& refs, int numFrames) {
             }
             frames[slot] = page;
         }
-        recordStep(r, page, hit, frames, evicted, "");
+        recordStep(r, page, hit, frames, evicted, "", "");
     }
     return r;
 }
 
 // ---- Adaptive: choose FIFO or LRU using ONLY past/current references -------
-// The rule (called only when a fault happens and memory is full):
-//   Look at the last ADAPT_WINDOW references up to and including the current
-//   one (refs[i-7 .. i]). Count how many of them repeat a page that already
-//   appeared earlier inside the same window.
-//       repeatRatio = repeats / window size
-//   repeatRatio >= 0.30  -> program is re-using pages (locality)  -> use LRU
-//   repeatRatio <  0.30  -> mostly new pages (scan-like)          -> use FIFO
+// The rule (same as the website):
+//   Adaptive secretly runs two "shadow" memories of the same size, one FIFO
+//   and one LRU, and feeds BOTH every reference it has seen so far.
+//   When the REAL memory is full and a page must be evicted, it counts how
+//   many faults each shadow had in the last ADAPT_WINDOW references
+//   (including the current one).
+//       LRU shadow had FEWER faults  -> evict using LRU
+//       otherwise (FIFO fewer, or tie) -> evict using FIFO
 // It never reads refs[i+1...], so it needs no knowledge of the future.
-bool shouldUseLRU(const vector<int>& refs, int i) {
-    int start = max(0, i - ADAPT_WINDOW + 1);
-    int windowSize = i - start + 1;
-    if (windowSize < 2) return false;        // not enough history -> FIFO
 
-    int repeats = 0;
-    for (int a = start; a <= i; a++) {
-        for (int b = start; b < a; b++) {    // only looks at earlier refs
-            if (refs[b] == refs[a]) { repeats++; break; }
+// A pretend memory. access() returns true if it would have been a fault.
+struct Shadow {
+    vector<int> pages;   // pages currently in the shadow memory
+    vector<int> stamp;   // FIFO: load time, LRU: last-use time
+    int  capacity;
+    bool isLRU;
+
+    Shadow(int n, bool lru) : capacity(n), isLRU(lru) {}
+
+    bool access(int page, int time) {
+        for (size_t i = 0; i < pages.size(); i++) {
+            if (pages[i] == page) {                    // hit
+                if (isLRU) stamp[i] = time;            // LRU refreshes on use
+                return false;
+            }
         }
+        if ((int)pages.size() < capacity) {            // free space
+            pages.push_back(page);
+            stamp.push_back(time);
+            return true;
+        }
+        size_t victim = 0;                             // smallest stamp = victim
+        for (size_t i = 1; i < pages.size(); i++)
+            if (stamp[i] < stamp[victim]) victim = i;
+        pages[victim] = page;
+        stamp[victim] = time;
+        return true;
     }
-    double repeatRatio = (double)repeats / windowSize;
-    return repeatRatio >= ADAPT_THRESHOLD;
-}
+};
 
-// Adaptive keeps BOTH pieces of bookkeeping (load time for FIFO, last use for
-// LRU) at all times, so it can switch rule on any fault without losing state.
+// The real memory keeps BOTH pieces of bookkeeping (load time for FIFO, last
+// use for LRU), so it can switch rule on any fault without losing state.
 Result runAdaptive(const vector<int>& refs, int numFrames) {
     Result r;
     r.name = "Adaptive";
@@ -235,10 +255,19 @@ Result runAdaptive(const vector<int>& refs, int numFrames) {
     vector<int> loadTime(numFrames, -1);     // when the page was loaded
     vector<int> lastUsed(numFrames, -1);     // when the page was last used
 
-    for (size_t i = 0; i < refs.size(); i++) {
+    Shadow shadowFIFO(numFrames, false);
+    Shadow shadowLRU(numFrames, true);
+    vector<int> fifoFaults(refs.size(), 0);  // 1 = the shadow faulted here
+    vector<int> lruFaults(refs.size(), 0);
+
+    for (int i = 0; i < (int)refs.size(); i++) {
         int page = refs[i];
+        // Both shadows see EVERY reference (hit or fault in the real memory).
+        fifoFaults[i] = shadowFIFO.access(page, i) ? 1 : 0;
+        lruFaults[i]  = shadowLRU.access(page, i) ? 1 : 0;
+
         int evicted = EMPTY;
-        string note = "";
+        string rule = "", note = "";
         int slot = findPage(frames, page);
         bool hit = (slot != -1);
 
@@ -247,8 +276,12 @@ Result runAdaptive(const vector<int>& refs, int numFrames) {
         } else {
             r.faults++;
             slot = findEmpty(frames);
-            if (slot == -1) {
-                bool useLRU = shouldUseLRU(refs, (int)i);
+            if (slot == -1) {                // full -> choose a strategy
+                int from = max(0, i - ADAPT_WINDOW + 1);
+                int f = 0, l = 0;
+                for (int j = from; j <= i; j++) { f += fifoFaults[j]; l += lruFaults[j]; }
+                bool useLRU = (l < f);
+
                 slot = 0;
                 for (int s = 1; s < numFrames; s++) {
                     if (useLRU ? (lastUsed[s] < lastUsed[slot])
@@ -256,14 +289,16 @@ Result runAdaptive(const vector<int>& refs, int numFrames) {
                         slot = s;
                 }
                 evicted = frames[slot];
-                note = useLRU ? "LRU" : "FIFO";
+                rule = useLRU ? "LRU" : "FIFO";
+                note = "last " + to_string(i - from + 1) + " refs: FIFO faults " +
+                       to_string(f) + ", LRU faults " + to_string(l);
                 if (useLRU) r.lruEvictions++; else r.fifoEvictions++;
             }
             frames[slot] = page;
-            loadTime[slot] = (int)i;
+            loadTime[slot] = i;
         }
-        lastUsed[slot] = (int)i;
-        recordStep(r, page, hit, frames, evicted, note);
+        lastUsed[slot] = i;
+        recordStep(r, page, hit, frames, evicted, rule, note);
     }
     return r;
 }
@@ -341,7 +376,7 @@ void printSteps(const Result& r) {
         } else {
             cout << "FAULT";
             if (s.evicted != EMPTY) cout << " (evict " << s.evicted << ")";
-            if (!s.note.empty())    cout << " [rule: " << s.note << "]";
+            if (!s.rule.empty())    cout << " [strategy: " << s.rule << "]";
         }
         cout << "\n";
     }
@@ -363,6 +398,58 @@ void printSummary(const vector<Result>& results, int refCount) {
              << setw(13) << percent(r.faults, total) << "%" << "\n";
     }
     cout << "  " << string(66, '=') << "\n";
+}
+
+// Table of every Adaptive replacement and the evidence behind it.
+void printAdaptiveDecisions(const Result& r) {
+    cout << "\n  Adaptive eviction decisions (past references only):\n";
+    cout << "  " << string(74, '-') << "\n";
+    cout << "  " << right << setw(6) << "Ref #" << setw(11) << "Requested"
+         << setw(9) << "Evicted" << setw(10) << "Strategy" << "   Evidence\n";
+    cout << "  " << string(74, '-') << "\n";
+    int shown = 0;
+    for (size_t i = 0; i < r.steps.size(); i++) {
+        const Step& s = r.steps[i];
+        if (s.rule.empty()) continue;
+        cout << "  " << setw(6) << i + 1 << setw(11) << s.page << setw(9) << s.evicted
+             << setw(10) << s.rule << "   " << s.note << "\n";
+        shown++;
+    }
+    if (shown == 0) cout << "  No replacement was needed (memory never filled up).\n";
+    cout << "  " << string(74, '-') << "\n";
+    cout << "  Adaptive replaced " << shown << " page(s): " << r.fifoEvictions
+         << " with FIFO, " << r.lruEvictions << " with LRU.\n";
+}
+
+// Text bar chart of page faults (like the website's bar chart).
+void printChart(const vector<Result>& results) {
+    int maxFaults = 1;
+    for (size_t i = 0; i < results.size(); i++)
+        maxFaults = max(maxFaults, results[i].faults);
+    const int WIDTH = 40;
+    cout << "\n  Page Faults Comparison (lower is better):\n";
+    for (size_t i = 0; i < results.size(); i++) {
+        int len = (int)((double)results[i].faults * WIDTH / maxFaults + 0.5);
+        cout << "  " << left << setw(9) << results[i].name << "| "
+             << string(len, '#') << " " << results[i].faults << "\n";
+    }
+}
+
+// Which REAL algorithm(s) had the fewest faults (Optimal excluded).
+void printHighlights(const vector<Result>& results) {
+    int best = -1;
+    for (size_t i = 0; i < results.size(); i++)
+        if (results[i].name != "Optimal" && (best == -1 || results[i].faults < best))
+            best = results[i].faults;
+    cout << "  Fewest faults among FIFO / LRU / Adaptive: ";
+    bool first = true;
+    for (size_t i = 0; i < results.size(); i++) {
+        if (results[i].name != "Optimal" && results[i].faults == best) {
+            cout << (first ? "" : ", ") << results[i].name;
+            first = false;
+        }
+    }
+    cout << " (" << best << " faults)\n";
 }
 
 void printSequence(const vector<int>& refs) {
@@ -515,12 +602,18 @@ int runSelfTests() {
     }
     check("Adaptive uses no future info (prefix test)", prefixOk);
 
-    // Adaptive rule sanity: pure scan -> FIFO, heavy repetition -> LRU.
-    int scan[]  = {1,2,3,4,5,6,7,8};
-    int hotArr[] = {1,2,1,2,1,2,1,2};
-    vector<int> sc(scan, scan + 8), hot(hotArr, hotArr + 8);
-    check("Rule: scan window chooses FIFO", !shouldUseLRU(sc, 7));
-    check("Rule: repeating window chooses LRU", shouldUseLRU(hot, 7));
+    // Adaptive rule sanity.
+    // Pure scan: both shadows fault every time (tie) -> always FIFO, never LRU.
+    int scan[] = {1,2,3,4,5,6,7,8,9,10};
+    vector<int> sc(scan, scan + 10);
+    check("Rule: pure scan never chooses LRU (ties go to FIFO)",
+          runAdaptive(sc, 3).lruEvictions == 0 && runAdaptive(sc, 3).fifoEvictions == 7);
+    // Textbook string: the LRU shadow does better at some point -> LRU used.
+    Result tbA = runAdaptive(tb, 3);
+    check("Rule: textbook string uses both strategies at least once",
+          tbA.lruEvictions > 0 && tbA.fifoEvictions > 0);
+    check("Adaptive evictions = faults - frames filled (textbook, 3 frames)",
+          tbA.fifoEvictions + tbA.lruEvictions == tbA.faults - 3);
 
     cout << "\n" << (testsRun - testsFailed) << "/" << testsRun << " checks passed.\n";
     return testsFailed;
@@ -605,12 +698,14 @@ int main(int argc, char* argv[]) {
                 for (size_t i = 0; i < results.size(); i++) printSteps(results[i]);
             printSummary(results, (int)refs.size());
 
+            if (choice == 9) {
+                printHighlights(results);
+                printChart(results);
+            }
             for (size_t i = 0; i < results.size(); i++) {
-                if (results[i].name == "Adaptive")
-                    cout << "  Adaptive evictions: " << results[i].fifoEvictions
-                         << " by FIFO rule, " << results[i].lruEvictions << " by LRU rule.\n";
+                if (results[i].name == "Adaptive") printAdaptiveDecisions(results[i]);
                 if (results[i].name == "Optimal")
-                    cout << "  Note: Optimal uses future knowledge - benchmark only.\n";
+                    cout << "\n  Note: Optimal uses future knowledge - benchmark only.\n";
             }
         }
     }
